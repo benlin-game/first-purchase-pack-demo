@@ -43,6 +43,7 @@ button { font-family: inherit; cursor: pointer; }
 .panel .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 6px 0; }
 .panel select, .panel input { background: #1c1a24; color: var(--ui-text); border: 1px solid var(--ui-line); border-radius: 6px; padding: 6px 8px; font-size: 13px; font-family: inherit; }
 .panel input[type=number] { width: 96px; }
+.btn:disabled { opacity: .4; cursor: default; }
 .btn { background: #24212e; color: var(--ui-text); border: 1px solid var(--ui-line); border-radius: 6px; padding: 6px 10px; font-size: 12px; }
 .btn:hover { border-color: var(--ui-accent); }
 .btn.primary { background: var(--ui-accent); color: #2a1a00; border-color: var(--ui-accent); font-weight: 700; }
@@ -109,6 +110,17 @@ button { font-family: inherit; cursor: pointer; }
 .machine .play { margin-top: 6px; font-size: 15px; color: var(--gold-1); opacity: .9; }
 .float-plus { position: absolute; left: 50%; top: 40%; transform: translateX(-50%); font-size: 40px; font-weight: 900; color: var(--gold-1); text-shadow: 0 2px 0 #000; pointer-events: none; animation: floatUp .9s ease-out forwards; }
 @keyframes floatUp { to { transform: translate(-50%, -70px); opacity: 0; } }
+.room { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 30px; z-index: 2; }
+.room-back { position: absolute; left: 24px; top: 24px; padding: 10px 24px; border-radius: 26px; background: rgba(0,0,0,.55); border: 2px solid var(--gold-2); color: var(--gold-1); font-size: 22px; font-weight: 900; font-family: inherit; cursor: pointer; }
+.room-name { font-size: 48px; font-weight: 900; text-shadow: 0 3px 0 rgba(0,0,0,.7); }
+.reels { display: flex; gap: 18px; }
+.reel { width: 160px; height: 190px; border-radius: 18px; background: rgba(0,0,0,.42); border: 3px solid rgba(245,201,90,.6); display: grid; place-items: center; box-shadow: inset 0 0 30px rgba(0,0,0,.5); }
+.reel span { font-size: 100px; font-weight: 900; background: var(--gold-text); -webkit-background-clip: text; background-clip: text; color: transparent; filter: drop-shadow(0 4px 0 rgba(0,0,0,.5)); }
+.spin { position: relative; width: 240px; height: 84px; border-radius: 42px; border: 3px solid #fff3c4; background: linear-gradient(180deg, #ffd96b, #e09a1c); color: #5a2a00; font-size: 34px; font-weight: 900; font-family: inherit; cursor: pointer; box-shadow: 0 6px 0 #8a4d05, 0 10px 18px rgba(0,0,0,.5); }
+.spin:active { transform: translateY(4px); box-shadow: 0 2px 0 #8a4d05; }
+.room-hint { padding: 10px 24px; border-radius: 26px; background: rgba(0,0,0,.6); font-size: 20px; }
+.room-hint b { color: var(--gold-2); font-variant-numeric: tabular-nums; }
+.room-hint.ready { color: var(--gold-1); font-weight: 900; border: 2px solid var(--gold-2); animation: bob 1.6s ease-in-out infinite; }
 .hint-bar { position: absolute; left: 50%; transform: translateX(-50%); bottom: 26px; padding: 10px 24px; border-radius: 26px; background: rgba(0,0,0,.6); border: 1px solid rgba(245,201,90,.4); font-size: 17px; white-space: nowrap; }
 .stage.port .hint-bar { bottom: 60px; font-size: 18px; white-space: normal; width: 640px; text-align: center; }
 .hint-bar b { color: var(--gold-2); font-variant-numeric: tabular-nums; }
@@ -261,9 +273,9 @@ for (const [key, uri] of Object.entries(ART)) {
 // Price ladder: assumed; only 33 / 70 / 130 / 370 / 12000 come from the spec.
 const LADDER = [33, 70, 130, 370, 670, 990, 1690, 3290, 6490, 12000];
 const TRIGGER_HANDS = 5;
-const TRIGGER_WINDOW_SEC = 24 * 3600;   // suggestion: 24h from first casino entry instead of calendar D0
+// Trigger: player with < 5 career hands reaches 5 hands, popup shows on returning to the casino lobby
 const STAGE_WINDOW_SEC = 48 * 3600;
-const START_SEC = 14 * 3600;            // first casino entry at D0 14:00
+const START_SEC = 14 * 3600;            // demo clock starts at D0 14:00
 
 // Reward ratio per stage, in % of the stage price (total = sum of the three days)
 const STAGE_RATIOS = [
@@ -305,6 +317,7 @@ const state = {
   now: START_SEC,
   paused: false,
   hands: 0,
+  inMachine: null,        // index of the machine being played; null = in lobby
   triggeredAt: null,
   tiers: null,            // snapshot at trigger
   stages: null,
@@ -419,7 +432,9 @@ function toast(msg) {
 }
 
 function playHand(evt) {
+  if (state.inMachine == null) state.inMachine = 0;
   state.hands += 1;
+  if (state.hands === TRIGGER_HANDS && state.triggeredAt == null) addLog("生涯機台手數達 5 手，回到大廳時跳出首儲禮包");
   if (evt) {
     const plus = document.createElement("div");
     plus.className = "float-plus";
@@ -427,22 +442,25 @@ function playHand(evt) {
     evt.currentTarget.appendChild(plus);
     setTimeout(() => plus.remove(), 900);
   }
+  render();
+}
+
+function enterMachine(i) { state.inMachine = i; render(); }
+function backToLobby() {
+  if (state.inMachine == null) return;
+  state.inMachine = null;
   if (state.triggeredAt == null && state.hands >= TRIGGER_HANDS) {
-    if (state.now - START_SEC < TRIGGER_WINDOW_SEC) {
-      state.triggeredAt = state.now;
-      state.tiers = tiersFor(state.maxSingle);
-      state.stages = freshStages();
-      state.popup = true;
-      state.activeTab = 0;
-      addLog(`觸發首儲禮包（第 ${state.hands} 手）。價位快照：${state.tiers.join(" / ")}`);
-    } else if (state.hands === TRIGGER_HANDS) {
-      addLog("打滿 5 手，但已超過首次進入 24 小時 → 不觸發");
-    }
+    state.triggeredAt = state.now;
+    state.tiers = tiersFor(state.maxSingle);
+    state.stages = freshStages();
+    state.popup = true;
+    state.activeTab = 0;
+    addLog(`回到大廳 → 跳出首儲禮包。價位快照：${state.tiers.join(" / ")}`);
   }
   render();
 }
 
-function openPopup() { state.popup = true; render(); }
+function openPopup() { state.inMachine = null; state.popup = true; render(); }
 function closePopup() { state.popup = false; state.dialog = null; render(); }
 function selectTab(s) { state.activeTab = s; render(); }
 
@@ -473,11 +491,11 @@ function toMidnight() { state.now = (dayOf(state.now) + 1) * 86400; tick(true); 
 
 function resetDemo() {
   Object.assign(state, {
-    now: START_SEC, hands: 0, triggeredAt: null, tiers: null, stages: null,
+    now: START_SEC, hands: 0, inMachine: null, triggeredAt: null, tiers: null, stages: null,
     popup: false, activeTab: 0, dialog: null,
     balances: { coin: 52300, dragon: 120, dice: 0, crit: 0 }, log: [],
   });
-  addLog("重置：首次進入娛樂城");
+  addLog("重置：新玩家（生涯機台手數 0）");
   render();
 }
 
@@ -490,21 +508,35 @@ function setMaxSingle(v) {
 }
 
 // ===================== RENDER: STAGE =====================
+const MACHINES = [
+  ["財神到", "財", "linear-gradient(160deg,#c2185b,#4a0d3a)"],
+  ["龍騰四海", "龍", "linear-gradient(160deg,#1f6fd1,#14205a)"],
+  ["黃金城", "金", "linear-gradient(160deg,#c77d12,#4d2306)"],
+  ["幸運777", "7", "linear-gradient(160deg,#7b2fd6,#22104d)"],
+];
+
+function machineHTML() {
+  const [n, sym, bg] = MACHINES[state.inMachine];
+  const ready = state.triggeredAt == null && state.hands >= TRIGGER_HANDS;
+  return `
+  <div class="room" style="background:${bg}">
+    <button class="room-back" onclick="backToLobby()">◀ 返回大廳</button>
+    <div class="room-name">${n}</div>
+    <div class="reels">${[0, 1, 2].map(() => `<div class="reel"><span>${sym}</span></div>`).join("")}</div>
+    <button class="spin" onclick="playHand(event)">轉一手</button>
+    <div class="room-hint${ready ? " ready" : ""}">${ready
+      ? "已達 5 手！返回大廳開啟首儲禮包"
+      : `生涯機台手數 <b>${state.hands}${state.triggeredAt == null ? ` / ${TRIGGER_HANDS}` : ""}</b>`}</div>
+  </div>`;
+}
+
 function lobbyHTML() {
   const alive = packAlive();
   const deadline = nextDeadline();
   const anyClaim = alive && [0, 1, 2].some(s => claimableList(s).length);
-  const windowLeft = TRIGGER_WINDOW_SEC - (state.now - START_SEC);
-  const machines = [
-    ["財神到", "財", "linear-gradient(160deg,#c2185b,#4a0d3a)"],
-    ["龍騰四海", "龍", "linear-gradient(160deg,#1f6fd1,#14205a)"],
-    ["黃金城", "金", "linear-gradient(160deg,#c77d12,#4d2306)"],
-    ["幸運777", "7", "linear-gradient(160deg,#7b2fd6,#22104d)"],
-  ];
-  let hint;
-  if (state.triggeredAt != null) hint = `生涯機台手數 <b>${state.hands}</b> · 首儲禮包已觸發`;
-  else if (windowLeft > 0) hint = `生涯機台手數 <b>${state.hands} / ${TRIGGER_HANDS}</b> · 首次進入 24 小時內打滿 5 手開啟首儲禮包（剩 <b data-timer="window">${fmtDur(windowLeft)}</b>）`;
-  else hint = `生涯機台手數 <b>${state.hands}</b> · 已超過首次進入 24 小時，不會觸發`;
+  const hint = state.triggeredAt != null
+    ? `生涯機台手數 <b>${state.hands}</b> · 首儲禮包已觸發`
+    : `生涯機台手數 <b>${state.hands} / ${TRIGGER_HANDS}</b> · 打滿 5 手後回到大廳即開啟首儲禮包`;
 
   return `
   <div class="lobby">
@@ -526,11 +558,11 @@ function lobbyHTML() {
       </div>` : ""}
     </div>
     <div class="machines">
-      ${machines.map(([n, sym, bg]) => `
-        <div class="machine" style="background:${bg}" onclick="playHand(event)">
+      ${MACHINES.map(([n, sym, bg], i) => `
+        <div class="machine" style="background:${bg}" onclick="enterMachine(${i})">
           <div class="sym">${sym}</div>
           <div class="mname">${n}</div>
-          <div class="play">點擊遊玩 1 手 ▶</div>
+          <div class="play">進入機台 ▶</div>
         </div>`).join("")}
     </div>
     <div class="hint-bar">${hint}</div>
@@ -739,7 +771,7 @@ function dialogHTML() {
     return `<div class="dlg-wrap"><div class="dlg" style="width:640px">
       <h3>活動規則</h3>
       <ol class="rules">
-        <li>首次進入娛樂城後 24 小時內，機台累積遊玩 5 手即開啟首儲禮包。</li>
+        <li>生涯機台手數未滿 5 手的玩家，累積遊玩達 5 手後回到一般／VIP 娛樂城大廳，即開啟首儲禮包。</li>
         <li>禮包共三階方案，依序開放：購買前一階後解鎖下一階。</li>
         <li>每階方案開放後限時 48 小時，逾時未購買則該階及後續方案關閉。</li>
         <li>方案價位依您的儲值紀錄提供。</li>
@@ -804,6 +836,7 @@ function panelHTML() {
   <div class="row" style="margin-top:10px">
     <button class="btn primary" onclick="playHand()">+1 手</button>
     <button class="btn" onclick="for(let i=0;i<5;i++) playHand()">+5 手</button>
+    <button class="btn" onclick="backToLobby()" ${state.inMachine == null ? "disabled" : ""}>返回大廳</button>
     <button class="btn" onclick="advance(3600)">+1 小時</button>
     <button class="btn" onclick="advance(12*3600)">+12 小時</button>
     <button class="btn" onclick="advance(86400)">+1 天</button>
@@ -813,7 +846,7 @@ function panelHTML() {
     <button class="btn" onclick="state.paused=!state.paused;render()">${state.paused ? "▶ 時間繼續" : "⏸ 時間暫停"}</button>
     <button class="btn warn" onclick="resetDemo()">重置</button>
   </div>
-  <div class="note">試玩建議：點大廳機台打 5 手 → 自動跳出禮包 → 購買第一階 → 領第一天 → 「+1 天」看第二天開放與補領 → 「+12 小時」×4 看 48 小時逾期。</div>
+  <div class="note">試玩建議：點大廳機台進入 → 轉 5 手 → 返回大廳自動跳出禮包 → 購買第一階 → 領第一天 → 「+1 天」看第二天開放與補領 → 「+12 小時」×4 看 48 小時逾期。</div>
 
   <h2>④ 事件紀錄</h2>
   <ul class="log">${state.log.map(l => `<li><time>${l.t}</time>${l.msg}</li>`).join("")}</ul>
@@ -825,7 +858,7 @@ let lastSig = "";
 let prevStatuses = null;
 
 function signature() {
-  const parts = [state.orient, state.hands, state.triggeredAt, state.popup, state.activeTab, JSON.stringify(state.dialog), state.maxSingle, state.paused, state.log.length];
+  const parts = [state.orient, state.hands, state.inMachine, state.triggeredAt, state.popup, state.activeTab, JSON.stringify(state.dialog), state.maxSingle, state.paused, state.log.length];
   if (state.stages) {
     for (let s = 0; s < 3; s++) {
       parts.push(stageInfo(s).status);
@@ -833,7 +866,6 @@ function signature() {
     }
   }
   parts.push(packAlive());
-  parts.push(state.now - START_SEC < TRIGGER_WINDOW_SEC);
   return parts.join("|");
 }
 
@@ -845,7 +877,7 @@ function render() {
   if (state.popup && !packAlive()) state.popup = false;
   const stage = document.getElementById("stage");
   stage.className = `stage ${state.orient}`;
-  stage.innerHTML = lobbyHTML() + (state.popup ? packHTML() : "") + (state.popup ? dialogHTML() : "");
+  stage.innerHTML = lobbyHTML() + (state.inMachine != null ? machineHTML() : "") + (state.popup ? packHTML() : "") + (state.popup ? dialogHTML() : "");
   const dialogKey = state.popup && state.dialog ? state.dialog.type : null;
   if (state.popup && !lastPopupOpen) stage.querySelector(".overlay").classList.add("enter");
   if (dialogKey && dialogKey !== lastDialogKey) stage.querySelector(".dlg-wrap").classList.add("enter");
@@ -866,7 +898,6 @@ function updateTimers() {
     let v = null;
     if (key === "deadline" && deadline != null) v = deadline - state.now;
     else if (key === "midnight") v = (dayOf(state.now) + 1) * 86400 - state.now;
-    else if (key === "window") v = TRIGGER_WINDOW_SEC - (state.now - START_SEC);
     else if (key.startsWith("stage")) {
       const info = stageInfo(Number(key.slice(5)));
       if (info.deadline) v = info.deadline - state.now;
@@ -942,7 +973,7 @@ function fit() {
 }
 window.addEventListener("resize", fit);
 
-addLog("首次進入娛樂城");
+addLog("新玩家（生涯機台手數 0）");
 render();
 </script>
 </body>
