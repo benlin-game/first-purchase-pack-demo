@@ -293,8 +293,12 @@ const COIN_PER_NTD = 100;
 const DRAGON_PER_COIN = 10000;
 const ITEM_COIN_VALUE = { dice: 100000, gold: 1000000, crit: 3000 };  // shop price in 神幣
 // Day 1: 100% of the price as 神幣, the rest of the day-1 % as 龍幣
-// Bonus items: day 2 = 必定暴擊 (count by price band); day 3 = 1 一般骰子 (stages 1-2) / 1 金骰子 (stage 3)
-const CRIT_BONUS = [[130, 1], [990, 2], [Infinity, 5]];
+// Bonus items per stage (fixed, not by price): day 2 = 必定暴擊, day 3 = dice
+const STAGE_BONUS = [
+  { crit: 1, dice: ["dice", 2] },
+  { crit: 2, dice: ["dice", 3] },
+  { crit: 3, dice: ["gold", 2] },
+];
 
 // ===================== ICONS =====================
 const giftSvg = () => `<svg viewBox="0 0 100 100"><rect x="14" y="40" width="72" height="50" rx="6" fill="#b5209a" stroke="url(#gGift)" stroke-width="5"/><rect x="10" y="28" width="80" height="18" rx="5" fill="#d43ab8" stroke="url(#gGift)" stroke-width="5"/><rect x="44" y="28" width="12" height="62" fill="url(#gGift)"/><path d="M50 28 C36 6 18 16 30 28 M50 28 C64 6 82 16 70 28" fill="none" stroke="url(#gGift)" stroke-width="6" stroke-linecap="round"/></svg>`;
@@ -387,9 +391,9 @@ function rewardsFor(s, k) {
     const fullCoins = price * COIN_PER_NTD;
     out.push({ id: "coin", amt: fullCoins }, { id: "dragon", amt: (coins - fullCoins) * DRAGON_PER_COIN });
   } else if (k === 1) {
-    out.push({ id: "coin", amt: coins }, { id: "crit", amt: CRIT_BONUS.find(([max]) => price <= max)[1], bonus: true });
+    out.push({ id: "coin", amt: coins }, { id: "crit", amt: STAGE_BONUS[s].crit, bonus: true });
   } else {
-    out.push({ id: "coin", amt: coins }, { id: s === 2 ? "gold" : "dice", amt: 1, bonus: true });
+    out.push({ id: "coin", amt: coins }, { id: STAGE_BONUS[s].dice[0], amt: STAGE_BONUS[s].dice[1], bonus: true });
   }
   return out.sort(byItemOrder);
 }
