@@ -291,10 +291,10 @@ const STAGE_RATIOS = [
 // Currency (神幣 + 龍幣) fills the shown %; items are bonus on top and are NOT counted in the shown %
 const COIN_PER_NTD = 100;
 const DRAGON_PER_COIN = 10000;
-const DRAGON_SHARE = 0.2;              // day 1: share of the currency value paid as 龍幣
 const ITEM_COIN_VALUE = { dice: 100000, gold: 1000000, crit: 3000 };  // shop price in 神幣
-// Bonus 必定暴擊 count by price band: [day 2, day 3 of stages 1-2]; stage 3 day 3 always gives 1 一般骰子
-const CRIT_BONUS = [[130, [1, 2]], [990, [2, 5]], [Infinity, [5, 10]]];
+// Day 1: 100% of the price as 神幣, the rest of the day-1 % as 龍幣
+// Bonus items: day 2 = 必定暴擊 (count by price band); day 3 = 1 一般骰子 (stages 1-2) / 1 金骰子 (stage 3)
+const CRIT_BONUS = [[130, 1], [990, 2], [Infinity, 5]];
 
 // ===================== ICONS =====================
 const giftSvg = () => `<svg viewBox="0 0 100 100"><rect x="14" y="40" width="72" height="50" rx="6" fill="#b5209a" stroke="url(#gGift)" stroke-width="5"/><rect x="10" y="28" width="80" height="18" rx="5" fill="#d43ab8" stroke="url(#gGift)" stroke-width="5"/><rect x="44" y="28" width="12" height="62" fill="url(#gGift)"/><path d="M50 28 C36 6 18 16 30 28 M50 28 C64 6 82 16 70 28" fill="none" stroke="url(#gGift)" stroke-width="6" stroke-linecap="round"/></svg>`;
@@ -384,14 +384,12 @@ function rewardsFor(s, k) {
   const coins = Math.round(price * STAGE_RATIOS[s].days[k] * COIN_PER_NTD / 100);
   const out = [];
   if (k === 0) {
-    const dragonCoins = Math.round(coins * DRAGON_SHARE);
-    out.push({ id: "coin", amt: coins - dragonCoins }, { id: "dragon", amt: dragonCoins * DRAGON_PER_COIN });
+    const fullCoins = price * COIN_PER_NTD;
+    out.push({ id: "coin", amt: fullCoins }, { id: "dragon", amt: (coins - fullCoins) * DRAGON_PER_COIN });
+  } else if (k === 1) {
+    out.push({ id: "coin", amt: coins }, { id: "crit", amt: CRIT_BONUS.find(([max]) => price <= max)[1], bonus: true });
   } else {
-    out.push({ id: "coin", amt: coins });
-    const [d2, d3] = CRIT_BONUS.find(([max]) => price <= max)[1];
-    if (k === 1) out.push({ id: "crit", amt: d2, bonus: true });
-    else if (s === 2) out.push({ id: "dice", amt: 1, bonus: true });
-    else out.push({ id: "crit", amt: d3, bonus: true });
+    out.push({ id: "coin", amt: coins }, { id: s === 2 ? "gold" : "dice", amt: 1, bonus: true });
   }
   return out.sort(byItemOrder);
 }
@@ -501,7 +499,7 @@ function claim(s, ks, auto = false) {
     state.stages[s].claimed[k] = true;
     rewardsFor(s, k).forEach(({ id, amt }) => { bag[id] = (bag[id] || 0) + amt; });
   });
-  Object.entries(bag).forEach(([id, amt]) => { state.balances[id] += amt; });
+  Object.entries(bag).forEach(([id, amt]) => { state.balances[id] = (state.balances[id] || 0) + amt; });
   addLog(`${auto ? "自動發放" : "領取"}${STEP_NAMES[s]} ${ks.map(k => DAY_NAMES[k]).join("、")}`);
   state.dialog = { type: "reward", bag, title: auto ? "購買成功" : "恭喜獲得", sub: auto ? `已自動發放${DAY_NAMES[0]}獎勵` : "" };
   render();
